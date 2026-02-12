@@ -152,8 +152,24 @@ flash_config(RState) ->
 
 flash_loader_value(Args, FlashCfg) ->
     case proplists:get_value(flash_loader, Args, undefined) of
-        undefined -> proplists:get_value(flash_loader, FlashCfg, undefined);
+        undefined ->
+            case proplists:get_value(flash_loader, FlashCfg, undefined) of
+                undefined -> default_flash_loader();
+                V0 -> V0
+            end;
         V -> V
+    end.
+
+default_flash_loader() ->
+    % Prefer the loader shipped with the plugin under priv/flash/.
+    case code:priv_dir(rebar3_grisp) of
+        {error, _} -> undefined;
+        PrivDir ->
+            P = filename:join([PrivDir, "flash", "flash_loader.bin"]),
+            case filelib:is_file(P) of
+                true -> P;
+                false -> undefined
+            end
     end.
 
 resolve_uuu() ->

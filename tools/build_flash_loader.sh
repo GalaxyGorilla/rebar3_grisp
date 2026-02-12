@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTDIR="${ROOT}/_grisp/flash"
+OUTDIR_PRIV="${ROOT}/priv/flash"
+OUTDIR_BUILD="${ROOT}/_grisp/flash"
 UBOOT_DIR="${ROOT}/_grisp/tmp/uboot-imx"
 
 UBOOT_REPO="https://github.com/nxp-imx/uboot-imx.git"
@@ -25,7 +26,7 @@ need bc
 need bison
 need flex
 
-mkdir -p "${OUTDIR}" "${ROOT}/_grisp/tmp"
+mkdir -p "${OUTDIR_PRIV}" "${OUTDIR_BUILD}" "${ROOT}/_grisp/tmp"
 
 if [[ ! -d "${UBOOT_DIR}/.git" ]]; then
   rm -rf "${UBOOT_DIR}"
@@ -73,6 +74,8 @@ if [[ ! -f u-boot-with-spl.imx ]]; then
   exit 1
 fi
 
-cp -v u-boot-with-spl.imx "${OUTDIR}/flash_loader.bin"
+cp -v u-boot-with-spl.imx "${OUTDIR_PRIV}/flash_loader.bin"
+cp -v u-boot-with-spl.imx "${OUTDIR_BUILD}/flash_loader.bin"
 
-echo "==> Wrote: ${OUTDIR}/flash_loader.bin"
+echo "==> Wrote: ${OUTDIR_PRIV}/flash_loader.bin"
+echo "==> Also copied to: ${OUTDIR_BUILD}/flash_loader.bin"

@@ -48,6 +48,12 @@ A reference script exists at:
 
 - `tools/build_flash_loader.sh`
 
+The resulting binary is stored in the repository at:
+
+- `priv/flash/flash_loader.bin`
+
+(The script also writes a convenience copy to `_grisp/flash/flash_loader.bin` for local builds.)
+
 Manual steps (for transparency):
 
 ```bash
@@ -84,7 +90,7 @@ scripts/config --file .config -d LDO_BYPASS_CHECK
 make olddefconfig
 make -j"$(nproc)" CROSS_COMPILE=arm-linux-gnueabihf-
 
-cp -v u-boot-with-spl.imx flash_loader.bin
+cp -v u-boot-with-spl.imx priv/flash/flash_loader.bin
 ```
 
 ## Notes
