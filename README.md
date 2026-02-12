@@ -256,7 +256,8 @@ This will:
 
 #### Requirements
 
-- Put the board into *Serial Downloader* mode (BOOT_MODE jumpers) and power-cycle.
+- Put the board into *Serial Downloader* mode (BOOT_MODE pins/jumpers) and power-cycle.
+  Hint: look on the back of the board for the BOOT_MODE diagram/silkscreen.
 - Install `uuu` and ensure it is in your `PATH`.
 - Install a flash loader image (booted via ROM Serial Downloader) that enables fastboot on the target.
   By default, the plugin ships one at `priv/flash/flash_loader.bin`, so `--flash_loader` is optional.
