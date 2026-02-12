@@ -235,6 +235,49 @@ generation of the software bundle even if one already exists in `_grisp/deploy`:
     rebar3 grisp firmware --bootloader --image --force --refresh
 
 
+### Flash eMMC via uuu (Serial Downloader)
+
+GRiSP2 is based on i.MX6ULL and supports NXP's Serial Downloader mode. The
+`flash` command can use the `uuu` tool to program the board over USB.
+
+**Default (application-only, no bootloader):**
+
+    rebar3 grisp flash
+
+This will:
+
+- auto-generate a *system partition* image (equivalent to `rebar3 grisp firmware --system`)
+- create a temporary uuu bundle zip (containing `uuu.auto` + payloads)
+- flash the *first system partition* on eMMC (A)
+
+**Full device flash (includes bootloader, more destructive):**
+
+    rebar3 grisp flash --bootloader
+
+#### Requirements
+
+- Put the board into *Serial Downloader* mode (BOOT_MODE jumpers) and power-cycle.
+- Install `uuu` and ensure it is in your `PATH`.
+- Provide a flash loader image (booted via ROM Serial Downloader) that enables fastboot on the target via
+  `--flash_loader /path/to/flash_loader.bin` (or configure it in `rebar.config`).
+- `zip` must be available in `PATH` (used to create a temporary uuu bundle).
+
+#### Configuration
+
+You can set defaults in `rebar.config`:
+
+```erlang
+{grisp, [
+  {flash, [
+    {flash_loader, "/path/to/flash_loader.bin"}
+  ]}
+]}.
+```
+
+This command never uses sudo automatically. If `uuu` fails due to USB
+permissions, run `uuu -udev` once and follow its instructions, then replug the board.
+
+
 ### Firmware Update
 
 Description of the variables in the commands that will follow:
