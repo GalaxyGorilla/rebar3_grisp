@@ -81,42 +81,58 @@ do(RState) ->
         FlashCfg = flash_config(RState),
 
         FlashLoader0 = flash_loader_value(Args, FlashCfg),
+        ensure_flash_loader(FlashLoader0),
 
         UuuPath = resolve_uuu(),
 
-        Artifact = ensure_artifact(RState, RelName, RelVsn, Bootloader),
-        #{kind := Kind, path := ArtifactPath} = Artifact,
+        Kind = case Bootloader of
+            true -> image;
+            false -> system
+        end,
+        ArtifactPath = rebar3_grisp_util:firmware_file_path(
+            RState,
+            case Kind of system -> system; image -> image end,
+            RelName,
+            RelVsn
+        ),
 
-        TempDir = mktemp_dir(),
-        {ok, OrigCwd} = file:get_cwd(),
-        try
-            % Prepare a working directory with predictable filenames for uuu bundle.
-            ok = file:set_cwd(TempDir),
+        case DryRun of
+            true ->
+                % Dry-run should not require building firmware artifacts (which may
+                % require a cross-compiled OTP package/toolchain). We only show the
+                % plan and validate inputs.
+                BundlePath = "<temporary>/grisp_flash.zip",
+                maybe_confirm(Yes, DryRun, Kind, ArtifactPath),
+                print_plan(DryRun, UuuPath, BundlePath, Kind, ArtifactPath),
+                console("* Dry-run: not generating firmware artifacts or flashing."),
+                {ok, RState};
+            false ->
+                Artifact = ensure_artifact(RState, RelName, RelVsn, Bootloader),
+                #{kind := _K, path := ArtifactPath2} = Artifact,
 
-            ensure_flash_loader(FlashLoader0),
-            ok = stage_inputs(Kind, ArtifactPath, FlashLoader0),
+                TempDir = mktemp_dir(),
+                {ok, OrigCwd} = file:get_cwd(),
+                try
+                    % Prepare a working directory with predictable filenames for uuu bundle.
+                    ok = file:set_cwd(TempDir),
 
-            AutoPath = filename:join(TempDir, "uuu.auto"),
-            ok = file:write_file(AutoPath, gen_script(Kind)),
+                    ok = stage_inputs(Kind, ArtifactPath2, FlashLoader0),
 
-            BundlePath = filename:join(TempDir, "grisp_flash.zip"),
-            ok = create_bundle(BundlePath),
+                    AutoPath = filename:join(TempDir, "uuu.auto"),
+                    ok = file:write_file(AutoPath, gen_script(Kind)),
 
-            maybe_confirm(Yes, DryRun, Kind, ArtifactPath),
+                    BundlePath2 = filename:join(TempDir, "grisp_flash.zip"),
+                    ok = create_bundle(BundlePath2),
 
-            print_plan(DryRun, UuuPath, BundlePath, Kind, ArtifactPath),
+                    maybe_confirm(Yes, DryRun, Kind, ArtifactPath2),
 
-            Res = case DryRun of
-                true ->
-                    console("* Dry-run: not flashing."),
-                    {ok, RState};
-                false ->
-                    run_uuu(UuuPath, BundlePath, RState)
-            end,
-            Res
-        after
-            _ = file:set_cwd(OrigCwd),
-            ok = cleanup_dir(TempDir)
+                    print_plan(DryRun, UuuPath, BundlePath2, Kind, ArtifactPath2),
+
+                    run_uuu(UuuPath, BundlePath2, RState)
+                after
+                    _ = file:set_cwd(OrigCwd),
+                    ok = cleanup_dir(TempDir)
+                end
         end
     catch
         error:{release_not_selected, _} = E -> erlang:error(E);
