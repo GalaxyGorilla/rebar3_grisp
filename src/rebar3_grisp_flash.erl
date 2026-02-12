@@ -231,9 +231,12 @@ ensure_file(Path) ->
     end.
 
 run_firmware(RState, RelName, RelVsn, FirmwareArgs) ->
-    Args = [
-        "as",
-        lists:join(",", [atom_to_list(P) || P <- rebar_state:current_profiles(RState)]),
+    Profiles = rebar_state:current_profiles(RState),
+    ProfileArgs = case Profiles of
+        [] -> [];
+        _ -> ["as", lists:join(",", [atom_to_list(P) || P <- Profiles])]
+    end,
+    Args = ProfileArgs ++ [
         "grisp",
         "firmware",
         "--relname", atom_to_list(RelName),
