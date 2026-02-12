@@ -181,8 +181,7 @@ deploy_bundle(RState, Refresh, RelName, RelVsn, ExtraRelArgs) ->
         "deploy",
         "--tar",
         "--relname", atom_to_list(RelName),
-        "--relvsn", RelVsn,
-        "--destination", ""
+        "--relvsn", RelVsn
     ] ++ case Refresh =:= true of
         true -> ["--force"];
         false -> []
