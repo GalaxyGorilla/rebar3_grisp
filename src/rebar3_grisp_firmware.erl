@@ -171,12 +171,12 @@ get_bundle(RState, Refresh, RelName, RelVsn, ExtraRelArgs) ->
     end.
 
 deploy_bundle(RState, Refresh, RelName, RelVsn, ExtraRelArgs) ->
-    Args = [
-        "as"
-    ] ++ [
-        lists:join(",", [atom_to_list(P)
-                         || P <- rebar_state:current_profiles(RState)])
-    ] ++ [
+    Profiles = rebar_state:current_profiles(RState),
+    ProfileArgs = case Profiles of
+        [] -> [];
+        _ -> ["as", lists:join(",", [atom_to_list(P) || P <- Profiles])]
+    end,
+    Args = ProfileArgs ++ [
         "grisp",
         "deploy",
         "--tar",
