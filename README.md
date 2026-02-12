@@ -266,6 +266,8 @@ This will:
 
 You can set defaults in `rebar.config`:
 
+To build a `flash_loader.bin` for GRiSP2, see: `docs/flash_loader.md`.
+
 ```erlang
 {grisp, [
   {flash, [
