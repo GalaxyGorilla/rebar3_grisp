@@ -50,6 +50,10 @@ init(State) ->
         {desc,
             "Flashes a GRiSP2 board in Serial Downloader mode using the NXP 'uuu' tool.\n"
             "\n"
+            "Before running this command:\n"
+            "  - put the board into Serial Downloader mode (BOOT_MODE pins/jumpers) and power-cycle\n"
+            "  - hint: look on the back of the board for the BOOT_MODE diagram/silkscreen\n"
+            "\n"
             "Default behavior (no --bootloader):\n"
             "  - auto-generates a system partition image (application-only)\n"
             "  - flashes only the first system partition (A) on eMMC\n"
