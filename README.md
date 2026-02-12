@@ -258,15 +258,22 @@ This will:
 
 - Put the board into *Serial Downloader* mode (BOOT_MODE jumpers) and power-cycle.
 - Install `uuu` and ensure it is in your `PATH`.
-- Provide a flash loader image (booted via ROM Serial Downloader) that enables fastboot on the target via
-  `--flash_loader /path/to/flash_loader.bin` (or configure it in `rebar.config`).
+- Install a flash loader image (booted via ROM Serial Downloader) that enables fastboot on the target.
+  By default, the plugin ships one at `priv/flash/flash_loader.bin`, so `--flash_loader` is optional.
+  You can still override it via `--flash_loader /path/to/flash_loader.bin` (or configure it in `rebar.config`).
 - `zip` must be available in `PATH` (used to create a temporary uuu bundle).
 
 #### Configuration
 
 You can set defaults in `rebar.config`:
 
-To build a `flash_loader.bin` for GRiSP2, see: `docs/flash_loader.md`.
+To (re)build the bundled `flash_loader.bin` for GRiSP2, see: `docs/flash_loader.md`.
+
+For convenience, you can run:
+
+    tools/build_flash_loader.sh
+
+This updates `priv/flash/flash_loader.bin` (tracked) and also writes a local copy to `_grisp/flash/flash_loader.bin`.
 
 ```erlang
 {grisp, [
