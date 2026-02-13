@@ -463,6 +463,18 @@ gen_probe_script() ->
         "# Read-only probe commands",
         "FB: ucmd echo GRISP_FLASH_PROBE_OK",
         "FB: ucmd version",
+        "FB: ucmd bdinfo",
+        "FB: ucmd echo --- env ---",
+        "FB: ucmd printenv board_name",
+        "FB: ucmd printenv board_rev",
+        "FB: ucmd printenv fdtcontroladdr",
+        "FB: ucmd printenv fdt_addr_r",
+        "FB: ucmd printenv fdtfile",
+        "FB: ucmd printenv fdtdir",
+        "FB: ucmd printenv bootcmd",
+        "FB: ucmd echo --- storage ---",
+        "FB: ucmd mmc list",
+        "FB: ucmd mmc dev 1",
         "FB: ucmd mmc info",
         "FB: done"
     ], "\n").
