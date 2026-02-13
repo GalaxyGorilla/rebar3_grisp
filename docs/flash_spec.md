@@ -133,6 +133,11 @@ Fallbacks if barebox gadget fastboot is not viable on GRiSP2:
   synchronization, and that barebox reached a prompt.
 
 ### Phase 2: Prefer fastboot gadget via barebox `usbgadget -A`
+- We will need an **appropriate barebox image** for this workflow:
+  - boots on GRiSP2 when loaded via `imx_uart`
+  - enables the required USB device controller in *peripheral* mode
+  - either **auto-starts `usbgadget -A ...`** (ideal: “boot straight into fastboot”)
+    or runs an init script that starts it deterministically.
 - In barebox, start the gadget with a partition description exporting the eMMC
   target(s), e.g. `usbgadget -A <desc>` (optionally add `-a` for USB ACM console).
 - On the host, use `fastboot getvar` to confirm connectivity, then `fastboot flash`
