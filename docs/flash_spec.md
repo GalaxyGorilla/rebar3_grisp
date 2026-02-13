@@ -1,110 +1,97 @@
-# GRiSP2 eMMC flashing (recovery + provisioning) – design note
+# GRiSP2 recovery / provisioning flashing – motivation + pathways
 
-This document captures *why* we want a GRiSP2 flashing workflow, what a good
-CLI/UX should look like, and the key technical constraints to respect.
+This note is about **user value** and **technical pathways** for flashing GRiSP2
+from a host in a recovery/provisioning context. It intentionally avoids locking
+in a specific implementation.
 
-It is intentionally short: enough to guide implementation and user-facing docs
-without overspecifying internals.
+## Motivation (what we want to enable)
 
-## Motivation (user value)
+Users should be able to flash GRiSP2 eMMC in two situations:
 
-We want GRiSP2 users to be able to:
+1) **Recovery**
+- The board does not boot (bootloader damaged, bad system partition, etc.).
+- The flashing entry point must not depend on the currently installed software.
 
-1) **Recover a board** when it no longer boots
-- e.g. broken bootloader / broken system partitions / bad release
-- requirement: must work even if the current on-device software is unusable
+2) **Provisioning / automation**
+- Repeatable “factory reset / provision” flows in a lab or manufacturing setup.
+- Scriptable and deterministic, suitable for CI runners or operator checklists.
 
-2) **Provision / automate** flashing in labs or manufacturing
-- repeatable, scriptable flashing from a host
-- minimal manual steps; predictable artifacts
+Common requirement: start from **i.MX ROM Serial Downloader mode** (BOOT_MODE
+pins/jumpers + power-cycle), because it is the lowest-level, most reliable entry
+point.
 
-The common requirement is an entry point that does not depend on the currently
-installed software. On i.MX-based GRiSP2 this means starting from **ROM Serial
-Downloader mode** (BOOT_MODE pins/jumpers + power-cycle).
+## Desired UX (CLI-level)
 
-## User experience / CLI goals
+A good UX likely looks like one primary command:
 
-### Primary command
+- `rebar3 grisp flash`
 
-`rebar3 grisp flash`
+…with a small set of modes:
 
-Design goals:
-- **One obvious command** for the common case.
-- **Safe default**: do the least destructive operation that yields a bootable
-  system.
-- **Scriptable**: provide `--yes` and machine-friendly output.
-- **Preflight**: allow validation without hardware (`--dry-run`).
-- **Diagnostics**: allow verifying that the recovery loader is actually running
-  without writing to eMMC (`--probe`).
+- default: least destructive flash that yields a bootable board
+- `--bootloader`: full eMMC re-provisioning (more destructive)
+- `--probe`: connectivity/info only (no writes)
+- `--dry-run`: prepare/validate locally (no hardware)
 
-### Proposed modes
+The exact backend can vary, but the UX should remain stable.
 
-- Default (safer):
-  - flash **system partition A** only
+## Technical pathways (how flashing could work)
 
-- `--bootloader` (destructive):
-  - flash a **full eMMC image** (boot + partitions + system)
+### Pathway A: ROM → temporary loader → fastboot ("uuu style")
 
-- `--probe` (no writes):
-  - boot the temporary recovery loader and run read-only diagnostics
+Idea:
+- Use ROM Serial Downloader to upload and boot a temporary loader (often U-Boot).
+- That loader exposes **USB fastboot**.
+- Host flashes via fastboot commands.
 
-- `--dry-run` (no hardware):
-  - generate/validate the artifacts and the flash bundle, but do not touch USB
+Host tooling often used:
+- NXP `uuu` (mfgtools) bundles: `SDP/SDPS/...` to boot loader, then `FB:` to
+  flash/query.
 
-### Options
+Pros:
+- Potentially very fast and automatable.
+- Same host script can work whether you start in ROM mode or already in fastboot
+  (when the script contains both stages).
 
-- `--relname`, `--relvsn` – select release
-- `--yes` – skip confirmation
-- `--flash_loader <path>` – override bundled loader image
+Cons / risks:
+- Must verify GRiSP2 support in practice.
+- Requires a suitable temporary loader and correct storage layout assumptions.
 
-## Technical circumstances (reality and constraints)
+Status note:
+- Treat `uuu` on GRiSP2 as **experimental until validated on real hardware**.
 
-### Upstream recovery path (baseline)
+### Pathway B: ROM → barebox via `imx_uart` → write eMMC from barebox
 
-Upstream GRiSP2 toolchain documentation describes recovery via **`imx_uart`**:
-- upload a barebox image in Serial Downloader mode
-- then use barebox to write an eMMC image
+This is the **documented upstream recovery approach**:
+- Build `imx_uart`.
+- Use Serial Downloader mode to upload a barebox image.
+- Flash an eMMC image from the barebox shell (SD card or TFTP).
 
-This is the *known-supported* recovery mechanism and must be referenced in docs.
+Source:
+- https://github.com/grisp/grisp2-rtems-toolchain#recovery
 
-Source: https://github.com/grisp/grisp2-rtems-toolchain#recovery
+Pros:
+- Known-supported for GRiSP2.
+- Does not rely on fastboot.
 
-### `uuu`-based workflow status
+Cons:
+- More manual steps by default.
+- Automation is possible but requires careful scripting around serial console.
 
-This plugin work implements a **ROM → temporary loader → fastboot** approach
-using NXP `uuu` bundles.
+### Pathway C: Booted bootloader update paths (non-ROM)
 
-Important: treat `uuu` on GRiSP2 as **experimental until proven on real
-hardware**.
+If the board boots into its production bootloader (barebox), there are classic
+update routes:
+- TFTP/HTTP fetch + `cp`/`uncompress` to `/dev/mmc...`
+- SD-card based update
 
-If GRiSP2 recovery ultimately requires `imx_uart`, we can still keep the same
-high-level UX (`rebar3 grisp flash`) while changing the transport under the hood
-(or adding a backend selector).
+Pros:
+- No need to toggle BOOT_MODE pins.
 
-### Flash loader
+Cons:
+- Not a recovery path if the bootloader is damaged.
 
-A recovery flow needs a temporary loader that:
-- boots from ROM download
-- exposes a mechanism to write/query eMMC
+## Documentation pointers
 
-Current implementation bundles a U-Boot-based loader:
-- `priv/flash/flash_loader.bin`
-- build documentation: `docs/flash_loader.md`
-
-### Artifact generation and deploy coupling
-
-Flashing relies on firmware artifacts built by `rebar3 grisp firmware`.
-That path may invoke `rebar3 grisp deploy --tar` to produce a bundle.
-
-For flashing/provisioning flows, deploy must support a **tarball-only** mode:
-- no copy destination required
-- no copy pre/post scripts
-
-(Implemented in this fork.)
-
-## Related documentation (where to point users)
-
-- `rebar3 grisp flash --help`
-- `docs/flash_loader.md` (how the bundled loader is built)
-- GRiSP2 recovery baseline (imx_uart):
-  https://github.com/grisp/grisp2-rtems-toolchain#recovery
+- Upstream GRiSP2 recovery: https://github.com/grisp/grisp2-rtems-toolchain#recovery
+- Flash loader notes (if using Pathway A): `docs/flash_loader.md` (in this repo)
