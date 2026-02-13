@@ -39,6 +39,9 @@ init(State) ->
             {yes, $y, "yes", {boolean, false}, "Skip confirmation prompt"},
             {dry_run, undefined, "dry-run", {boolean, false}, "Show what would be executed without flashing"},
 
+            {probe, undefined, "probe", {boolean, false},
+                "Boot flash loader and print debug info (no eMMC writes)"},
+
             % uuu must be available in PATH
 
             % Primary input: flash loader booted via ROM Serial Downloader (SDP/SDPS)
@@ -79,6 +82,7 @@ do(RState) ->
         {RelName, RelVsn} = rebar3_grisp_util:select_release(RState, RelNameArg, RelVsnArg),
 
         Bootloader = proplists:get_value(bootloader, Args, false),
+        Probe = proplists:get_value(probe, Args, false),
         Yes = proplists:get_value(yes, Args, false),
         DryRun = proplists:get_value(dry_run, Args, false),
 
@@ -89,16 +93,17 @@ do(RState) ->
 
         UuuPath = resolve_uuu(),
 
-        Kind = case Bootloader of
-            true -> image;
-            false -> system
+        Kind0 = case {Probe, Bootloader} of
+            {true, _} -> probe;
+            {false, true} -> image;
+            {false, false} -> system
         end,
-        ArtifactPath = rebar3_grisp_util:firmware_file_path(
-            RState,
-            case Kind of system -> system; image -> image end,
-            RelName,
-            RelVsn
-        ),
+
+        ArtifactPath0 = case Kind0 of
+            probe -> undefined;
+            system -> rebar3_grisp_util:firmware_file_path(RState, system, RelName, RelVsn);
+            image -> rebar3_grisp_util:firmware_file_path(RState, image, RelName, RelVsn)
+        end,
 
         case DryRun of
             true ->
@@ -106,33 +111,49 @@ do(RState) ->
                 % require a cross-compiled OTP package/toolchain). We only show the
                 % plan and validate inputs.
                 BundlePath = "<temporary>/grisp_flash.zip",
-                maybe_confirm(Yes, DryRun, Kind, ArtifactPath),
-                print_plan(DryRun, UuuPath, BundlePath, Kind, ArtifactPath),
+                maybe_confirm(Yes, DryRun, Kind0, ArtifactPath0),
+                print_plan(DryRun, UuuPath, BundlePath, Kind0, ArtifactPath0),
                 console("* Dry-run: not generating firmware artifacts or flashing."),
                 {ok, RState};
             false ->
-                Artifact = ensure_artifact(RState, RelName, RelVsn, Bootloader),
-                #{kind := _K, path := ArtifactPath2} = Artifact,
-
                 TempDir = mktemp_dir(),
                 {ok, OrigCwd} = file:get_cwd(),
                 try
                     % Prepare a working directory with predictable filenames for uuu bundle.
                     ok = file:set_cwd(TempDir),
 
-                    ok = stage_inputs(Kind, ArtifactPath2, FlashLoader0),
-
-                    AutoPath = filename:join(TempDir, "uuu.auto"),
-                    ok = file:write_file(AutoPath, gen_script(Kind)),
-
-                    BundlePath2 = filename:join(TempDir, "grisp_flash.zip"),
-                    ok = create_bundle(BundlePath2),
-
-                    maybe_confirm(Yes, DryRun, Kind, ArtifactPath2),
-
-                    print_plan(DryRun, UuuPath, BundlePath2, Kind, ArtifactPath2),
-
-                    run_uuu(UuuPath, BundlePath2, RState)
+                    case Kind0 of
+                        probe ->
+                            ok = stage_probe_inputs(FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_probe_script()),
+                            BundlePath2 = filename:join(TempDir, "grisp_flash_probe.zip"),
+                            ok = create_bundle(BundlePath2),
+                            print_plan(DryRun, UuuPath, BundlePath2, Kind0, ArtifactPath0),
+                            run_uuu(UuuPath, BundlePath2, RState);
+                        system ->
+                            Artifact = ensure_artifact(RState, RelName, RelVsn, false),
+                            #{path := ArtifactPath2} = Artifact,
+                            ok = stage_inputs(system, ArtifactPath2, FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_script(system)),
+                            BundlePath2 = filename:join(TempDir, "grisp_flash.zip"),
+                            ok = create_bundle(BundlePath2),
+                            maybe_confirm(Yes, DryRun, system, ArtifactPath2),
+                            print_plan(DryRun, UuuPath, BundlePath2, system, ArtifactPath2),
+                            run_uuu(UuuPath, BundlePath2, RState);
+                        image ->
+                            Artifact = ensure_artifact(RState, RelName, RelVsn, true),
+                            #{path := ArtifactPath2} = Artifact,
+                            ok = stage_inputs(image, ArtifactPath2, FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_script(image)),
+                            BundlePath2 = filename:join(TempDir, "grisp_flash.zip"),
+                            ok = create_bundle(BundlePath2),
+                            maybe_confirm(Yes, DryRun, image, ArtifactPath2),
+                            print_plan(DryRun, UuuPath, BundlePath2, image, ArtifactPath2),
+                            run_uuu(UuuPath, BundlePath2, RState)
+                    end
                 after
                     _ = file:set_cwd(OrigCwd),
                     ok = cleanup_dir(TempDir)
@@ -292,6 +313,10 @@ stage_inputs(image, ArtifactPath, FlashLoaderPath) ->
     ok = copy(ArtifactPath, "emmc.img"),
     ok.
 
+stage_probe_inputs(FlashLoaderPath) ->
+    ok = copy(FlashLoaderPath, "flash_loader.bin"),
+    ok.
+
 copy(Src, Dest) ->
     case file:copy(Src, Dest) of
         {ok, _} -> ok;
@@ -300,6 +325,7 @@ copy(Src, Dest) ->
 
 maybe_confirm(true, _DryRun, _Kind, _ArtifactPath) -> ok;
 maybe_confirm(_Yes, true, _Kind, _ArtifactPath) -> ok;
+maybe_confirm(_Yes, _DryRun, probe, _ArtifactPath) -> ok;
 maybe_confirm(false, false, Kind, ArtifactPath) ->
     RelPath = grisp_tools_util:maybe_relative(ArtifactPath, ?MAX_DDOT),
     KindStr = case Kind of system -> "system partition"; image -> "full eMMC" end,
@@ -313,11 +339,15 @@ maybe_confirm(false, false, Kind, ArtifactPath) ->
     end.
 
 print_plan(true, UuuPath, BundlePath, Kind, ArtifactPath) ->
-    KindStr = case Kind of system -> "system"; image -> "image" end,
-    RelPath = grisp_tools_util:maybe_relative(ArtifactPath, ?MAX_DDOT),
+    KindStr = case Kind of system -> "system"; image -> "image"; probe -> "probe" end,
     console("* Plan:"),
     console("  kind: ~s", [KindStr]),
-    console("  artifact: ~s", [RelPath]),
+    case ArtifactPath of
+        undefined -> ok;
+        _ ->
+            RelPath = grisp_tools_util:maybe_relative(ArtifactPath, ?MAX_DDOT),
+            console("  artifact: ~s", [RelPath])
+    end,
     console("  uuu: ~s", [UuuPath]),
     console("  bundle: ~s", [BundlePath]);
 print_plan(false, _UuuPath, _BundlePath, _Kind, _ArtifactPath) -> ok.
@@ -410,5 +440,29 @@ gen_script(image) ->
         "FB: ucmd setexpr blkcnt ${blkcnt} / 0x200",
         "FB: ucmd mmc write ${fastboot_buffer} 0x0 ${blkcnt}",
         "",
+        "FB: done"
+    ], "\n").
+
+% Probe script: boot loader and run read-only commands.
+% This verifies the loader is running and fastboot is functional without any writes.
+
+gen_probe_script() ->
+    string:join([
+        "uuu_version 1.4.149",
+        "",
+        "# Boot flash loader via ROM Serial Downloader",
+        "SDP: boot -f flash_loader.bin -scanlimited 0x800000",
+        "SDPS: boot -scanterm -f flash_loader.bin -scanlimited 0x800000",
+        "SDPU: delay 1000",
+        "SDPU: write -f flash_loader.bin -offset 0x57c00",
+        "SDPU: jump -scanlimited 0x800000",
+        "SDPV: delay 1000",
+        "SDPV: write -f flash_loader.bin -skipspl -scanterm -scanlimited 0x800000",
+        "SDPV: jump -scanlimited 0x800000",
+        "",
+        "# Read-only probe commands",
+        "FB: ucmd echo GRISP_FLASH_PROBE_OK",
+        "FB: ucmd version",
+        "FB: ucmd mmc info",
         "FB: done"
     ], "\n").
