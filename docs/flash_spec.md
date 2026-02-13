@@ -37,51 +37,73 @@ The exact backend can vary, but the UX should remain stable.
 
 ## Technical pathways (how flashing could work)
 
+Think of this as two stages:
+
+1) **How do we gain control?** (ROM mode, bootloader shell, etc.)
+2) **How do we actually write eMMC?** (fastboot/DFU/ums/TFTP/SD/serial)
+
+The CLI can stay stable while we switch the backend.
+
 ### Pathway A: USB SDP (`uuu`) – *not supported on GRiSP2*
 
 In theory, NXP `uuu` can flash i.MX devices by talking to the ROM over **USB SDP**
 (typically the ROM enumerates as an NXP/Freescale USB device, often VID `15a2`).
 A `uuu` bundle then boots a temporary loader and uses `FB:` fastboot commands.
 
-However, on GRiSP2 the ROM does **not** appear to enumerate as an NXP USB SDP
-device on Linux (no VID `15a2`). The board exposes an FT2232 USB–UART instead,
-which strongly suggests the intended recovery transport is UART.
+On GRiSP2, the ROM does **not** appear to enumerate as an NXP USB SDP device on
+Linux (no VID `15a2`). The board exposes an FT2232 USB–UART instead.
 
 Therefore the USB SDP / `uuu` pathway should be treated as **not supported on
-GRiSP2** (unless proven otherwise with hardware evidence).
+GRiSP2** unless proven otherwise.
 
-### Pathway B: ROM → barebox via `imx_uart` → write eMMC from barebox
+### Pathway B (baseline): UART ROM downloader (`imx_uart`) → barebox → flash
 
 This is the **documented upstream recovery approach**:
-- Build `imx_uart`.
-- Use Serial Downloader mode to upload a barebox image.
+- Use Serial Downloader mode + `imx_uart` to upload a barebox image.
 - Flash an eMMC image from the barebox shell (SD card or TFTP).
 
-Source:
-- https://github.com/grisp/grisp2-rtems-toolchain#recovery
+Source: https://github.com/grisp/grisp2-rtems-toolchain#recovery
 
-Pros:
-- Known-supported for GRiSP2.
-- Does not rely on fastboot.
+Notes:
+- This is the best-known supported path.
+- Automation is possible but may require scripting a serial console.
 
-Cons:
-- More manual steps by default.
-- Automation is possible but requires careful scripting around serial console.
+### Pathway C: UART ROM downloader (`imx_uart`) → *fastboot-capable loader*
 
-### Pathway C: Booted bootloader update paths (non-ROM)
+Even if USB SDP/`uuu` is not available, **fastboot can still be attractive** as
+a flashing protocol if we can boot a loader that exposes fastboot over USB
+*gadget*.
 
-If the board boots into its production bootloader (barebox), there are classic
-update routes:
-- TFTP/HTTP fetch + `cp`/`uncompress` to `/dev/mmc...`
-- SD-card based update
+Sketch:
+- Enter Serial Downloader mode.
+- Use `imx_uart` to upload/boot a U-Boot (or other) image that auto-enters
+  fastboot.
+- Use `fastboot` tooling (or a small wrapper) to write/query eMMC.
 
-Pros:
-- No need to toggle BOOT_MODE pins.
+This keeps the clean fastboot UX, but swaps the ROM transport to UART.
 
-Cons:
-- Not a recovery path if the bootloader is damaged.
+### Pathway D: barebox native “update modes” (when bootloader runs)
+
+If the production bootloader (barebox) is intact, we can expose more convenient
+update mechanisms that do not require toggling BOOT_MODE pins:
+- USB gadget **fastboot** (if supported/enableable)
+- USB gadget **DFU**
+- USB gadget **mass storage** (UMS): export eMMC as a block device to the host
+- Ethernet + TFTP/HTTP + `cp`/`uncompress`
+
+These are not guaranteed to exist today, but they’re worth investigating.
+
+### Pathway E: serial-console driven flashing (lowest common denominator)
+
+If we can reach a bootloader shell over UART (barebox/U-Boot), flashing can be
+scripted by issuing commands to:
+- probe MMC
+- fetch an image (SD/TFTP/possibly ymodem/kermit)
+- write to `/dev/mmc...`
+
+Not glamorous, but often the most reliable for automation.
 
 ## Documentation pointers
 
-- Upstream GRiSP2 recovery: https://github.com/grisp/grisp2-rtems-toolchain#recovery
-- Flash loader notes (if using Pathway A): `docs/flash_loader.md` (in this repo)
+- Upstream GRiSP2 recovery (imx_uart): https://github.com/grisp/grisp2-rtems-toolchain#recovery
+- Flash loader notes (historical/experimental uuu work): `docs/flash_loader.md` (in this repo)
