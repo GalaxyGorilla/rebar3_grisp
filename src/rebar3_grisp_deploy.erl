@@ -56,12 +56,27 @@ do(RState) ->
     Config = rebar3_grisp_util:config(RState),
     OTPVersion = rebar3_grisp_util:otp_version(Config),
     Board = rebar3_grisp_util:platform(Config),
-    CopyDest = get_option(destination, [deploy, destination], RState, undefined),
-    PreScript0 = get_option(pre_script, [deploy, pre_script], RState, undefined),
-    PostScript0 = get_option(post_script, [deploy, post_script], RState, undefined),
     {Args, _} = rebar_state:command_parsed_args(RState),
     Force = proplists:get_value(force, Args, false),
     Tar = proplists:get_value(tar, Args, false),
+
+    % In tarball-only mode (used by firmware/flash), we must not require or use a
+    % deploy destination from rebar.config. Only use destination/scripts when the
+    % user explicitly asks for copying (either by omitting --tar or by providing
+    % --destination).
+    DestCli = proplists:get_value(destination, Args, undefined),
+    CopyDest = case {Tar, DestCli} of
+        {true, undefined} -> undefined;
+        _ -> get_option(destination, [deploy, destination], RState, undefined)
+    end,
+    PreScript0 = case {Tar, DestCli} of
+        {true, undefined} -> undefined;
+        _ -> get_option(pre_script, [deploy, pre_script], RState, undefined)
+    end,
+    PostScript0 = case {Tar, DestCli} of
+        {true, undefined} -> undefined;
+        _ -> get_option(post_script, [deploy, post_script], RState, undefined)
+    end,
     RelNameArg = proplists:get_value(relname, Args),
     RelVsnArg = proplists:get_value(relvsn, Args),
 
