@@ -37,13 +37,11 @@ init(State) ->
                 "Include bootloader by flashing a full eMMC image (more destructive)"},
 
             {yes, $y, "yes", {boolean, false}, "Skip confirmation prompt"},
-            {dry_run, undefined, "dry-run", {boolean, false}, "Show what would be executed without flashing"},
+            {dry_run, undefined, "dry-run", {boolean, false},
+                "Prepare artifacts and uuu bundle but do not run uuu (no flashing)"},
 
             {probe, undefined, "probe", {boolean, false},
                 "Boot flash loader and print debug info (no eMMC writes)"},
-
-            {build_artifacts, undefined, "build-artifacts", {boolean, false},
-                "Also generate firmware artifacts (for system/image)"},
 
             % uuu must be available in PATH
 
@@ -86,7 +84,6 @@ do(RState) ->
 
         Bootloader = proplists:get_value(bootloader, Args, false),
         Probe = proplists:get_value(probe, Args, false),
-        BuildArtifacts = proplists:get_value(build_artifacts, Args, false),
         Yes = proplists:get_value(yes, Args, false),
         DryRun = proplists:get_value(dry_run, Args, false),
 
@@ -111,26 +108,45 @@ do(RState) ->
 
         case DryRun of
             true ->
-                % Dry-run: validate inputs and show the plan, but do not create a uuu bundle
-                % and do not call uuu.
-                ArtifactPath1 = case {BuildArtifacts, Kind0} of
-                    {_, probe} -> undefined;
-                    {false, _} -> ArtifactPath0;
-                    {true, system} ->
-                        #{path := P} = ensure_artifact(RState, RelName, RelVsn, false),
-                        P;
-                    {true, image} ->
-                        #{path := P} = ensure_artifact(RState, RelName, RelVsn, true),
-                        P
-                end,
-                BundlePath = "<temporary>/grisp_flash.zip",
-                maybe_confirm(Yes, DryRun, Kind0, ArtifactPath1),
-                print_plan(DryRun, UuuPath, BundlePath, Kind0, ArtifactPath1),
-                case BuildArtifacts of
-                    true -> console("* Dry-run: artifacts generated; not creating uuu bundle and not flashing.");
-                    false -> console("* Dry-run: not generating firmware artifacts, not creating uuu bundle, and not flashing.")
-                end,
-                {ok, RState};
+                % Dry-run: execute everything up to (but not including) the actual uuu run.
+                % This is useful to validate artifact generation + bundle creation without hardware.
+                TempDir = mktemp_dir(),
+                {ok, OrigCwd} = file:get_cwd(),
+                try
+                    ok = file:set_cwd(TempDir),
+                    {BundleName, ArtifactPath1} = case Kind0 of
+                        probe ->
+                            ok = stage_probe_inputs(FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_probe_script()),
+                            {"grisp_flash_probe_dryrun.zip", undefined};
+                        system ->
+                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, false),
+                            ok = stage_inputs(system, ArtifactPath2, FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_script(system)),
+                            {"grisp_flash_dryrun.zip", ArtifactPath2};
+                        image ->
+                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, true),
+                            ok = stage_inputs(image, ArtifactPath2, FlashLoader0),
+                            AutoPath = filename:join(TempDir, "uuu.auto"),
+                            ok = file:write_file(AutoPath, gen_script(image)),
+                            {"grisp_flash_dryrun.zip", ArtifactPath2}
+                    end,
+                    BundleTmp = filename:join(TempDir, "bundle.zip"),
+                    ok = create_bundle(BundleTmp),
+                    OutDir = filename:join([OrigCwd, "_grisp", "flash"]),
+                    ok = filelib:ensure_dir(filename:join(OutDir, "dummy")),
+                    OutBundle = filename:join(OutDir, BundleName),
+                    ok = copy(BundleTmp, OutBundle),
+                    maybe_confirm(Yes, DryRun, Kind0, ArtifactPath1),
+                    print_plan(DryRun, UuuPath, OutBundle, Kind0, ArtifactPath1),
+                    console("* Dry-run: bundle created; not invoking uuu (no flashing)."),
+                    {ok, RState}
+                after
+                    _ = file:set_cwd(OrigCwd),
+                    ok = cleanup_dir(TempDir)
+                end;
             false ->
                 TempDir = mktemp_dir(),
                 {ok, OrigCwd} = file:get_cwd(),
