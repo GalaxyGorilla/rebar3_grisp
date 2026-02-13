@@ -66,13 +66,13 @@ Source: https://github.com/grisp/grisp2-rtems-toolchain#recovery
 
 Notes:
 - This is the best-known supported path.
-- Automation is possible but may require scripting a serial console.
+- The goal is automation; the serial console can still be driven programmatically.
 
 ### Pathway C: UART ROM downloader (`imx_uart`) → *fastboot-capable loader*
 
 Even if USB SDP/`uuu` is not available, **fastboot can still be attractive** as
-a flashing protocol if we can boot a loader that exposes fastboot over USB
-*gadget*.
+an automation-friendly flashing protocol if we can boot a loader that exposes
+fastboot over USB *gadget*.
 
 Sketch:
 - Enter Serial Downloader mode.
@@ -92,16 +92,6 @@ update mechanisms that do not require toggling BOOT_MODE pins:
 - Ethernet + TFTP/HTTP + `cp`/`uncompress`
 
 These are not guaranteed to exist today, but they’re worth investigating.
-
-### Pathway E: serial-console driven flashing (lowest common denominator)
-
-If we can reach a bootloader shell over UART (barebox/U-Boot), flashing can be
-scripted by issuing commands to:
-- probe MMC
-- fetch an image (SD/TFTP/possibly ymodem/kermit)
-- write to `/dev/mmc...`
-
-Not glamorous, but often the most reliable for automation.
 
 ## Documentation pointers
 
