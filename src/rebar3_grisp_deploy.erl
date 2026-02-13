@@ -57,8 +57,8 @@ do(RState) ->
     OTPVersion = rebar3_grisp_util:otp_version(Config),
     Board = rebar3_grisp_util:platform(Config),
     CopyDest = get_option(destination, [deploy, destination], RState, undefined),
-    PreScript = get_option(pre_script, [deploy, pre_script], RState, undefined),
-    PostScript = get_option(pre_script, [deploy, post_script], RState, undefined),
+    PreScript0 = get_option(pre_script, [deploy, pre_script], RState, undefined),
+    PostScript0 = get_option(post_script, [deploy, post_script], RState, undefined),
     {Args, _} = rebar_state:command_parsed_args(RState),
     Force = proplists:get_value(force, Args, false),
     Tar = proplists:get_value(tar, Args, false),
@@ -75,10 +75,11 @@ do(RState) ->
     try
         {RelName, RelVsn}
             = rebar3_grisp_util:select_release(RState2, RelNameArg, RelVsnArg),
-        DistSpec = case {Tar, CopyDest}  of
+        TarOnly = (Tar =:= true) andalso (CopyDest =:= undefined orelse CopyDest =:= ""),
+        DistSpec = case {Tar, CopyDest} of
             {false, D} when D =:= undefined; D =:= "" ->
                 error(no_deploy_destination);
-            {true, D}  when D =:= undefined; D =:= "" -> [
+            {true, D} when D =:= undefined; D =:= "" -> [
                 bundle_dist_spec(RState2, RelName, RelVsn, Force)
             ];
             {false, _} -> [
@@ -89,6 +90,8 @@ do(RState) ->
                 copy_dist_spec(RState2, CopyDest, Force)
             ]
         end,
+        PreScript = case TarOnly of true -> undefined; false -> PreScript0 end,
+        PostScript = case TarOnly of true -> undefined; false -> PostScript0 end,
         Profiles = [P || P <- rebar_state:current_profiles(RState2),
                          P =/= default, P =/= grisp, P =/= test],
         DeploySpec = #{
