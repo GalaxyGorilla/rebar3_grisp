@@ -42,6 +42,9 @@ init(State) ->
             {probe, undefined, "probe", {boolean, false},
                 "Boot flash loader and print debug info (no eMMC writes)"},
 
+            {build_artifacts, undefined, "build-artifacts", {boolean, false},
+                "Also generate firmware artifacts (for system/image)"},
+
             % uuu must be available in PATH
 
             % Primary input: flash loader booted via ROM Serial Downloader (SDP/SDPS)
@@ -83,6 +86,7 @@ do(RState) ->
 
         Bootloader = proplists:get_value(bootloader, Args, false),
         Probe = proplists:get_value(probe, Args, false),
+        BuildArtifacts = proplists:get_value(build_artifacts, Args, false),
         Yes = proplists:get_value(yes, Args, false),
         DryRun = proplists:get_value(dry_run, Args, false),
 
@@ -109,23 +113,23 @@ do(RState) ->
             true ->
                 % Dry-run: validate inputs and show the plan, but do not create a uuu bundle
                 % and do not call uuu.
-                %
-                % NOTE: We *do* generate firmware artifacts here for system/image modes,
-                % because users often want to validate that the artifact generation works
-                % without having hardware connected.
-                ArtifactPath1 = case Kind0 of
-                    probe -> undefined;
-                    system ->
+                ArtifactPath1 = case {BuildArtifacts, Kind0} of
+                    {_, probe} -> undefined;
+                    {false, _} -> ArtifactPath0;
+                    {true, system} ->
                         #{path := P} = ensure_artifact(RState, RelName, RelVsn, false),
                         P;
-                    image ->
+                    {true, image} ->
                         #{path := P} = ensure_artifact(RState, RelName, RelVsn, true),
                         P
                 end,
                 BundlePath = "<temporary>/grisp_flash.zip",
                 maybe_confirm(Yes, DryRun, Kind0, ArtifactPath1),
                 print_plan(DryRun, UuuPath, BundlePath, Kind0, ArtifactPath1),
-                console("* Dry-run: not creating uuu bundle and not flashing."),
+                case BuildArtifacts of
+                    true -> console("* Dry-run: artifacts generated; not creating uuu bundle and not flashing.");
+                    false -> console("* Dry-run: not generating firmware artifacts, not creating uuu bundle, and not flashing.")
+                end,
                 {ok, RState};
             false ->
                 TempDir = mktemp_dir(),
