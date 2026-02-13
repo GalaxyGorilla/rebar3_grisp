@@ -60,13 +60,13 @@ GRiSP2** unless proven otherwise.
 
 This is the **documented upstream recovery approach**:
 - Use Serial Downloader mode + `imx_uart` to upload a barebox image.
-- Flash an eMMC image from the barebox shell (SD card or TFTP).
+- From barebox, write an eMMC image (and/or partitions).
 
 Source: https://github.com/grisp/grisp2-rtems-toolchain#recovery
 
-Notes:
-- This is the best-known supported path.
-- The goal is automation; the serial console can still be driven programmatically.
+Automation note:
+- The goal is a host-driven workflow; barebox may offer USB gadget modes (DFU/
+  fastboot/UMS) that are more automation-friendly than typing commands manually.
 
 ### Pathway C: UART ROM downloader (`imx_uart`) → *fastboot-capable loader*
 
@@ -84,14 +84,23 @@ This keeps the clean fastboot UX, but swaps the ROM transport to UART.
 
 ### Pathway D: barebox native “update modes” (when bootloader runs)
 
-If the production bootloader (barebox) is intact, we can expose more convenient
-update mechanisms that do not require toggling BOOT_MODE pins:
-- USB gadget **fastboot** (if supported/enableable)
-- USB gadget **DFU**
-- USB gadget **mass storage** (UMS): export eMMC as a block device to the host
-- Ethernet + TFTP/HTTP + `cp`/`uncompress`
+If barebox is intact, it may be able to expose automation-friendly update
+mechanisms without toggling BOOT_MODE pins.
 
-These are not guaranteed to exist today, but they’re worth investigating.
+Barebox supports USB device (gadget) modes including **DFU**, **Android fastboot**
+and **USB mass storage** via the `usbgadget` command (composite gadgets are
+supported).
+
+Doc: https://www.barebox.org/doc/latest/user/usb.html
+
+This suggests possible automated pathways:
+- USB gadget **fastboot** (host uses fastboot tooling)
+- USB gadget **DFU** (host uses `dfu-util`)
+- USB gadget **mass storage** / UMS (host writes a prepared image)
+- Ethernet + TFTP/HTTP + barebox commands
+
+These still need GRiSP2-specific validation and configuration (which partitions
+are exported, how eMMC maps, etc.).
 
 ## Documentation pointers
 
