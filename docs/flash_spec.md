@@ -68,39 +68,52 @@ Automation note:
 - The goal is a host-driven workflow; barebox may offer USB gadget modes (DFU/
   fastboot/UMS) that are more automation-friendly than typing commands manually.
 
-### Pathway C: UART ROM downloader (`imx_uart`) → *fastboot-capable loader*
+### Pathway C: UART ROM downloader (`imx_uart`) → fastboot endpoint (automation-friendly)
 
 Even if USB SDP/`uuu` is not available, **fastboot can still be attractive** as
 an automation-friendly flashing protocol if we can boot a loader that exposes
 fastboot over USB *gadget*.
 
-Sketch:
-- Enter Serial Downloader mode.
-- Use `imx_uart` to upload/boot a U-Boot (or other) image that auto-enters
-  fastboot.
-- Use `fastboot` tooling (or a small wrapper) to write/query eMMC.
+Two plausible variants:
+- **C1 (preferred): `imx_uart` → barebox → `usbgadget -A ...`**
+  - barebox supports Android fastboot as a USB gadget function and can export
+    block devices/partitions; see barebox USB docs.
+- **C2: `imx_uart` → U-Boot → fastboot**
+  - boot a U-Boot image that auto-enters fastboot, then use host `fastboot`.
 
-This keeps the clean fastboot UX, but swaps the ROM transport to UART.
+Why this matters: it keeps a clean host automation story (fastboot protocol)
+while using UART as the ROM bootstrap transport.
+
+Docs:
+- barebox `usbgadget` options include `-A` (fastboot), `-D` (DFU), `-S` (mass storage):
+  https://www.barebox.org/doc/latest/commands/hwmanip/usbgadget.html
+- barebox USB overview + fastboot support:
+  https://www.barebox.org/doc/latest/user/usb.html
 
 ### Pathway D: barebox native “update modes” (when bootloader runs)
 
-If barebox is intact, it may be able to expose automation-friendly update
-mechanisms without toggling BOOT_MODE pins.
+If barebox is intact, it may expose automation-friendly update mechanisms
+without toggling BOOT_MODE pins.
 
-Barebox supports USB device (gadget) modes including **DFU**, **Android fastboot**
-and **USB mass storage** via the `usbgadget` command (composite gadgets are
-supported).
+Barebox supports USB gadget functions via `usbgadget`:
+- `-A` Android **fastboot**
+- `-D` **DFU**
+- `-S` **USB mass storage** (UMS)
+(and can combine functions, e.g. fastboot + USB serial ACM).
 
-Doc: https://www.barebox.org/doc/latest/user/usb.html
+This suggests automated pathways:
+- **fastboot gadget** (host uses `fastboot flash ...` / `getvar`)
+- **DFU gadget** (host uses `dfu-util`)
+- **UMS gadget** (host writes to exported block devices)
+- potentially **fastboot over ethernet** (barebox has net fastboot support)
 
-This suggests possible automated pathways:
-- USB gadget **fastboot** (host uses fastboot tooling)
-- USB gadget **DFU** (host uses `dfu-util`)
-- USB gadget **mass storage** / UMS (host writes a prepared image)
-- Ethernet + TFTP/HTTP + barebox commands
+GRiSP2-specific validation needed:
+- which USB controller/port can be used in device mode
+- correct partition/export description for eMMC
 
-These still need GRiSP2-specific validation and configuration (which partitions
-are exported, how eMMC maps, etc.).
+Docs:
+- https://www.barebox.org/doc/latest/user/usb.html
+- https://www.barebox.org/doc/latest/commands/hwmanip/usbgadget.html
 
 ## Documentation pointers
 
