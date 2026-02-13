@@ -110,6 +110,17 @@ do(RState) ->
             true ->
                 % Dry-run: execute everything up to (but not including) the actual uuu run.
                 % This is useful to validate artifact generation + bundle creation without hardware.
+                %
+                % Important: firmware artifact generation must run from the project cwd.
+                ArtifactPathPre = case Kind0 of
+                    probe -> undefined;
+                    system ->
+                        #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, false),
+                        ArtifactPath2;
+                    image ->
+                        #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, true),
+                        ArtifactPath2
+                end,
                 TempDir = mktemp_dir(),
                 {ok, OrigCwd} = file:get_cwd(),
                 try
@@ -121,17 +132,15 @@ do(RState) ->
                             ok = file:write_file(AutoPath, gen_probe_script()),
                             {"grisp_flash_probe_dryrun.zip", undefined};
                         system ->
-                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, false),
-                            ok = stage_inputs(system, ArtifactPath2, FlashLoader0),
+                            ok = stage_inputs(system, ArtifactPathPre, FlashLoader0),
                             AutoPath = filename:join(TempDir, "uuu.auto"),
                             ok = file:write_file(AutoPath, gen_script(system)),
-                            {"grisp_flash_dryrun.zip", ArtifactPath2};
+                            {"grisp_flash_dryrun.zip", ArtifactPathPre};
                         image ->
-                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, true),
-                            ok = stage_inputs(image, ArtifactPath2, FlashLoader0),
+                            ok = stage_inputs(image, ArtifactPathPre, FlashLoader0),
                             AutoPath = filename:join(TempDir, "uuu.auto"),
                             ok = file:write_file(AutoPath, gen_script(image)),
-                            {"grisp_flash_dryrun.zip", ArtifactPath2}
+                            {"grisp_flash_dryrun.zip", ArtifactPathPre}
                     end,
                     BundleTmp = filename:join(TempDir, "bundle.zip"),
                     ok = create_bundle(BundleTmp),
@@ -164,8 +173,7 @@ do(RState) ->
                             print_plan(DryRun, UuuPath, BundlePath2, Kind0, ArtifactPath0),
                             run_uuu(UuuPath, BundlePath2, RState);
                         system ->
-                            Artifact = ensure_artifact(RState, RelName, RelVsn, false),
-                            #{path := ArtifactPath2} = Artifact,
+                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, false),
                             ok = stage_inputs(system, ArtifactPath2, FlashLoader0),
                             AutoPath = filename:join(TempDir, "uuu.auto"),
                             ok = file:write_file(AutoPath, gen_script(system)),
@@ -175,8 +183,7 @@ do(RState) ->
                             print_plan(DryRun, UuuPath, BundlePath2, system, ArtifactPath2),
                             run_uuu(UuuPath, BundlePath2, RState);
                         image ->
-                            Artifact = ensure_artifact(RState, RelName, RelVsn, true),
-                            #{path := ArtifactPath2} = Artifact,
+                            #{path := ArtifactPath2} = ensure_artifact(RState, RelName, RelVsn, true),
                             ok = stage_inputs(image, ArtifactPath2, FlashLoader0),
                             AutoPath = filename:join(TempDir, "uuu.auto"),
                             ok = file:write_file(AutoPath, gen_script(image)),
