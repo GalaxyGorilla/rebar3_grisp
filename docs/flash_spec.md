@@ -37,28 +37,18 @@ The exact backend can vary, but the UX should remain stable.
 
 ## Technical pathways (how flashing could work)
 
-### Pathway A: ROM → temporary loader → fastboot ("uuu style")
+### Pathway A: USB SDP (`uuu`) – *not supported on GRiSP2*
 
-Idea:
-- Use ROM Serial Downloader to upload and boot a temporary loader (often U-Boot).
-- That loader exposes **USB fastboot**.
-- Host flashes via fastboot commands.
+In theory, NXP `uuu` can flash i.MX devices by talking to the ROM over **USB SDP**
+(typically the ROM enumerates as an NXP/Freescale USB device, often VID `15a2`).
+A `uuu` bundle then boots a temporary loader and uses `FB:` fastboot commands.
 
-Host tooling often used:
-- NXP `uuu` (mfgtools) bundles: `SDP/SDPS/...` to boot loader, then `FB:` to
-  flash/query.
+However, on GRiSP2 the ROM does **not** appear to enumerate as an NXP USB SDP
+device on Linux (no VID `15a2`). The board exposes an FT2232 USB–UART instead,
+which strongly suggests the intended recovery transport is UART.
 
-Pros:
-- Potentially very fast and automatable.
-- Same host script can work whether you start in ROM mode or already in fastboot
-  (when the script contains both stages).
-
-Cons / risks:
-- Must verify GRiSP2 support in practice.
-- Requires a suitable temporary loader and correct storage layout assumptions.
-
-Status note:
-- Treat `uuu` on GRiSP2 as **experimental until validated on real hardware**.
+Therefore the USB SDP / `uuu` pathway should be treated as **not supported on
+GRiSP2** (unless proven otherwise with hardware evidence).
 
 ### Pathway B: ROM → barebox via `imx_uart` → write eMMC from barebox
 
