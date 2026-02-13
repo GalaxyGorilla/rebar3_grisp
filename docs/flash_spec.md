@@ -92,6 +92,73 @@ GRiSP2-specific validation needed:
 - which USB controller/port can be used in device mode
 - correct partition/export description for eMMC
 
+## Recommendation (preferred backend + rationale)
+
+**Preferred implementation target:**
+
+- **`imx_uart` (UART ROM bootstrap) → barebox → USB gadget fastboot/DFU/UMS**
+
+Rationale:
+- **Matches GRiSP2 reality:** the board reliably exposes UART in ROM Serial
+  Downloader mode (FT2232), while USB SDP is not available.
+- **Barebox-first:** GRiSP2 already prioritizes barebox; using its update
+  frameworks reduces divergence from upstream and avoids introducing an extra
+  bootloader layer unnecessarily.
+- **Automation-friendly endpoint:** once barebox is running, exposing a USB
+  gadget function (preferably **fastboot**) yields a clean host-side protocol
+  for scripted flashing.
+- **Stable CLI, swappable internals:** the CLI can stay `rebar3 grisp flash ...`
+  while the backend evolves (fastboot vs DFU vs UMS, different partition maps,
+  etc.).
+
+Fallbacks if barebox gadget fastboot is not viable on GRiSP2:
+- **`imx_uart` → barebox → DFU** (still host-driven, widely available tooling)
+- **`imx_uart` → barebox → UMS** (simple but riskier; host writes raw blocks)
+- **`imx_uart` → U-Boot → fastboot** (extra moving parts, but a practical plan B)
+
+## Implementation plan (phased)
+
+### Phase 0: Define what “flash” means (artifacts + partitions)
+- Pick the minimal “bootable” set for default mode (e.g. write system partition
+  only), and define `--bootloader` as “full eMMC reprovisioning”.
+- Decide artifact format(s): raw `.img` vs partition images; keep it aligned
+  with existing `rebar3 grisp firmware` outputs.
+
+### Phase 1: Make ROM bootstrap reliable (`imx_uart` integration)
+- Add a backend module that:
+  - locates `imx_uart` on PATH (or supports an explicit config key)
+  - selects the correct UART device (allow `--port /dev/ttyUSB…`)
+  - uploads/boots a known-good barebox image
+- `--probe` at this stage can verify: UART connectivity, boot banner
+  synchronization, and that barebox reached a prompt.
+
+### Phase 2: Prefer fastboot gadget via barebox `usbgadget -A`
+- In barebox, start the gadget with a partition description exporting the eMMC
+  target(s), e.g. `usbgadget -A <desc>` (optionally add `-a` for USB ACM console).
+- On the host, use `fastboot getvar` to confirm connectivity, then `fastboot flash`
+  to write partitions.
+- Map CLI modes to fastboot operations:
+  - default: flash system/rootfs partition(s)
+  - `--bootloader`: include barebox/env/boot partitions as needed
+  - `--probe`: `fastboot getvar all` (plus any non-destructive queries)
+
+### Phase 3: Add DFU / UMS fallbacks (still via barebox)
+- DFU: start `usbgadget -D <desc>` and flash with `dfu-util`.
+- UMS: start `usbgadget -S <desc>` and write using safe host tooling.
+- Backend selection can be automatic (prefer fastboot; fall back if tools/USB
+  enumeration fail) or explicit (`--backend fastboot|dfu|ums`).
+
+### Phase 4: Hardening + UX
+- Ensure `--dry-run` goes as far as possible: validate artifacts, generate the
+  partition export description, check host tooling availability, but do not
+  touch hardware.
+- Add “operator checklist” output for the only required manual step:
+  “Set BOOT_MODE pins to Serial Downloader and power-cycle.”
+- Capture logs (UART transcript + host fastboot/dfu logs) for reproducibility.
+
 ## Documentation pointers
 
 - Upstream GRiSP2 recovery (imx_uart): https://github.com/grisp/grisp2-rtems-toolchain#recovery
+- barebox USB gadget docs (`usbgadget`, fastboot/DFU/UMS):
+  https://www.barebox.org/doc/latest/user/usb.html
+  https://www.barebox.org/doc/latest/commands/hwmanip/usbgadget.html
